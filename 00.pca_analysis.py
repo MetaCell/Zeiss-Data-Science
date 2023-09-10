@@ -7,9 +7,11 @@ import plotly.express as px
 import xarray as xr
 from sklearn.decomposition import PCA
 
+from routine.plotting import scatter_3d
 from routine.utilities import load_mat_data
 
 IN_DPATH = "./data"
+IN_CELLMAP = "./data/CellMaps.xlsx"
 PARAM_BEHAV_ORD = [
     "Familiar-BeingAttacked",
     "Novel-BeingAttacked",
@@ -54,6 +56,26 @@ PARAM_BEHAV_ORD = [
     "still",
     "still_20fps",
 ]
+PARAM_COLMAP = {
+    "BeingAttacked": "lightcoral",
+    "SideAttack": "crimson",
+    "AggressiveChase": "darkred",
+    "Groupsniff": "violet",
+    "SideSniff1": "darkviolet",
+    "dig": "springgreen",
+    "nose2nose1": "purple",
+    "nose2rear1": "magenta",
+    "nosey1": "mediumorchid",
+    "follow1": "deepskyblue",
+    "groom_front": "green",
+    "groomfront": "green",
+    "sitcorner": "mediumaquamarine",
+    "wallclimb": "silver",
+    "walk": "slategray",
+    "still": "gray",
+}
+PARAM_SYMMAP = {"novel": "square", "familiar": "x", "self": "circle"}
+SS_DICT = {}
 PARAM_NCOMP = 3
 PARAM_WHITEN = True
 FIG_PATH = "./figs/pca"
@@ -71,6 +93,8 @@ def classify_behav(row):
         evt = row.idxmax()
         if evt.endswith("_20fps"):
             evt = evt[:-6]
+        if evt.endswith("_20fpsr"):
+            evt = evt[:-7]
         if evt.startswith("Novel-"):
             evt = evt.split("-")[1]
             tgt = "novel"
@@ -92,27 +116,45 @@ for (anm, ss), act, behav_df in load_mat_data(IN_DPATH):
     act = act.assign_coords(event=("frame", behav["event"]))
     act = act.dropna("frame").transpose("frame", "unit_id")
     act = act.sel(frame=act.coords["event"].notnull())
-    pca = PCA(n_components=PARAM_NCOMP, whiten=PARAM_WHITEN)
-    proj = xr.DataArray(
-        pca.fit_transform(act),
-        dims=["frame", "comp"],
-        coords={
-            "frame": act.coords["frame"],
-            "comp": ["comp{}".format(i) for i in range(PARAM_NCOMP)],
-        },
+    projs = []
+    for reg, reg_act in act.groupby("region"):
+        if reg_act.sizes["unit_id"] > PARAM_NCOMP:
+            pca = PCA(n_components=PARAM_NCOMP, whiten=PARAM_WHITEN)
+            proj = xr.DataArray(
+                pca.fit_transform(reg_act),
+                dims=["frame", "comp"],
+                coords={
+                    "frame": act.coords["frame"],
+                    "comp": ["comp{}".format(i) for i in range(PARAM_NCOMP)],
+                },
+            )
+            proj_df = proj.to_pandas()
+        else:
+            proj_df = reg_act.to_pandas()
+            proj_df.columns = ["comp{}".format(i) for i in range(len(proj_df.columns))]
+        proj_df = proj_df.merge(behav, on="frame", how="left", validate="one_to_one")
+        proj_df["region"] = reg + "-dim:{}".format(reg_act.sizes["unit_id"])
+        projs.append(proj_df)
+    proj_df = pd.concat(projs, ignore_index=True)
+    proj_df = proj_df[proj_df["event"].notnull()].copy()
+    proj_df["color"] = proj_df["event"].map(PARAM_COLMAP)
+    proj_df["symbol"] = proj_df["target"].map(PARAM_SYMMAP)
+    proj_df["legend"] = proj_df["target"] + "-" + proj_df["event"]
+    proj_df[["comp0", "comp1", "comp2"]] = proj_df[["comp0", "comp1", "comp2"]].fillna(
+        0
     )
-    proj_df = proj.to_pandas().merge(
-        behav, on="frame", how="left", validate="one_to_one"
-    )
-    fig = px.scatter_3d(
+    fig = scatter_3d(
         proj_df,
+        facet_row=None,
+        facet_col="region",
+        col_wrap=3,
         x="comp0",
         y="comp1",
         z="comp2",
-        symbol="target",
-        color="event",
-        symbol_map={"novel": "square", "familiar": "x", "self": "circle"},
+        legend_dim="legend",
+        marker={"color": "color", "symbol": "symbol"},
+        mode="markers",
     )
-    fig.update_traces(marker_size=3)
+    fig.update_traces(marker_size=2)
     fig.update_layout(legend={"itemsizing": "constant"})
     fig.write_html(os.path.join(fig_path, "{}-{}.html".format(anm, ss)))
