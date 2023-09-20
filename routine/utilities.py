@@ -22,6 +22,78 @@ DAY_DICT = {
 }
 COL_DICT = {"Day4_AccDay4_Test": "Day4"}
 
+PARAM_BEHAV_ORD = [
+    "Familiar-BeingAttacked",
+    "Novel-BeingAttacked",
+    "BeingAttacked",
+    "Familiar-SideAttack",
+    "Novel-SideAttack",
+    "SideAttack",
+    "Familiar-AggressiveChase",
+    "Novel-AggressiveChase",
+    "AggressiveChase",
+    "Familiar-Groupsniff_20fps",
+    "Novel-Groupsniff_20fps",
+    "Groupsniff_20fps",
+    "Familiar-SideSniff1_20fps",
+    "Novel-SideSniff1_20fps",
+    "SideSniff1_20fps",
+    "Familiar-dig_20fps",
+    "Novel-dig_20fps",
+    "dig_20fps",
+    "Familiar-nose2nose1_20fpsr",
+    "Novel-nose2nose1_20fpsr",
+    "nose2nose1_20fpsr",
+    "Familiar-nose2rear1_20fps",
+    "Novel-nose2rear1_20fps",
+    "nose2rear1_20fps",
+    "Familiar-nosey1_20fps",
+    "Novel-nosey1_20fps",
+    "nosey1_20fps",
+    "Familiar-follow1_20fps",
+    "Novel-follow1_20fps",
+    "follow1_20fps",
+    "Familiar-groomfront_20fps",
+    "Novel-groomfront_20fps",
+    "groom_front",
+    "groomfront_20fps",
+    "sitcorner",
+    "sitcorner_20fps",
+    "wallclimb",
+    "wallclimb_20fps",
+    "walk",
+    "walk_20fps",
+    "still",
+    "still_20fps",
+]
+
+
+def behav_key(k):
+    return list(map(PARAM_BEHAV_ORD.index, k))
+
+
+def classify_behav(row):
+    fm = int(row["frame"])
+    row = row.drop("frame").sort_index(key=behav_key)
+    if row.max() == 1:
+        evt = row.idxmax()
+        if evt.endswith("_20fps"):
+            evt = evt[:-6]
+        if evt.endswith("_20fpsr"):
+            evt = evt[:-7]
+        if evt.startswith("Novel-"):
+            evt = evt.split("-")[1]
+            tgt = "novel"
+        elif evt.startswith("Familiar-"):
+            evt = evt.split("-")[1]
+            tgt = "familiar"
+        else:
+            tgt = "self"
+    else:
+        evt = np.nan
+        tgt = np.nan
+    return pd.Series({"frame": fm, "event": evt, "target": tgt})
+
 
 def load_mat_data(dpath):
     try:
