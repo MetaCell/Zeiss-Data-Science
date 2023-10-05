@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import xarray as xr
+from scipy.ndimage import gaussian_filter1d
 
 from routine.dimension_reduction import reduce_wrap
 from routine.utilities import classify_behav, load_mat_data
@@ -17,12 +18,21 @@ PARAM_NCOMP = 3
 PARAM_NNB = 5
 PARAM_WHITEN = True
 PARAM_TRIM_UNKNOWN = True
+PARAM_SIGMA = 4
 FIG_PATH = "./figs/cell_reduc"
 OUT_PATH = "./intermediate/cell_reduc"
 
 # %% load and aggregate events
 tuning_ls = []
-for (anm, ss), act, behav_df in load_mat_data(IN_DPATH):
+for (anm, ss), act, curC, curS, behav_df in load_mat_data(IN_DPATH):
+    act = xr.apply_ufunc(
+        gaussian_filter1d,
+        curS,
+        input_core_dims=[["frame"]],
+        output_core_dims=[["frame"]],
+        vectorize=True,
+        kwargs={"sigma": PARAM_SIGMA},
+    )
     behav = behav_df.apply(classify_behav, axis="columns")
     behav["evt"] = behav["event_map"] + "-" + behav["target"]
     evt_tuning = []
