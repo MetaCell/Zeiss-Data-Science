@@ -21,6 +21,7 @@ DAY_DICT = {
     "Test": "Day5",
 }
 COL_DICT = {"Day4_AccDay4_Test": "Day4"}
+DECONV_PATH = "./intermediate/deconvolution"
 
 PARAM_BEHAV_MAP = {
     "Familiar-BeingAttacked": "attack",
@@ -67,6 +68,24 @@ PARAM_BEHAV_MAP = {
     "still_20fps": "still",
 }
 
+RAW_BEHAV_DICT = {
+    "Acc1": "CompRawScores_A1",
+    "Acc2": "CompRawScores_A2",
+    "Acc3": "CompRawScores_A3",
+    "Acc4": "CompRawScores_A4",
+    "Acc5": "CompRawScores_A5",
+    "Train1": "CompRawScores_T1",
+    "Train2": "CompRawScores_T2",
+    "Train3": "CompRawScores_T3",
+    "Train4": "CompRawScores_T4",
+    "Test": "CompRawScores_Test",
+}
+
+
+def norm_cells(a, fm_dim="frame"):
+    amin, amax = a.min(fm_dim), a.max(fm_dim)
+    return (a - amin) / (amax - amin)
+
 
 def behav_key(k):
     return list(map(list(PARAM_BEHAV_MAP.keys()).index, k))
@@ -97,7 +116,7 @@ def classify_behav(row):
     return pd.Series({"frame": fm, "event": evt, "target": tgt, "event_map": evt_mp})
 
 
-def load_mat_data(dpath):
+def load_mat_data(dpath, load_deconv=True):
     try:
         cellmap = pd.read_excel(
             os.path.join(dpath, "CellMaps.xlsx"),
@@ -116,6 +135,9 @@ def load_mat_data(dpath):
         )
         behav = loadmat(
             os.path.join(dpath, "{}_Behavior.mat".format(anm)), simplify_cells=True
+        )
+        raw_behav = loadmat(
+            os.path.join(dpath, "{}_Raw.mat".format(anm)), simplify_cells=True
         )
         act_dict = dict()
         for ss, a in act.items():
@@ -161,6 +183,21 @@ def load_mat_data(dpath):
                 warnings.warn("Cannot load data for {}, {}".format(anm, ss))
                 continue
             behav_df["frame"] = np.arange(len(behav_df))
+            try:
+                behav_df_raw = pd.DataFrame(
+                    raw_behav[RAW_BEHAV_DICT[ss]].T, columns=header
+                )
+                behav_df_raw["frame"] = np.arange(len(behav_df_raw))
+            except:
+                pass
+            if load_deconv:
+                try:
+                    minian_ds = xr.open_dataset(
+                        os.path.join(DECONV_PATH, "{}-{}.nc".format(anm, ss))
+                    )
+                except FileNotFoundError:
+                    continue
+                curC, curS = minian_ds["C"], minian_ds["S"]
             if cellmap is not None:
                 day = DAY_DICT[ss]
                 cmap = (
@@ -186,7 +223,35 @@ def load_mat_data(dpath):
                     .map(roi_dict)
                     .to_xarray()
                 )
-            yield (anm, ss), cur_act, behav_df
+                if load_deconv:
+                    curC = curC.assign_coords(
+                        region=curC.coords["unit_id"]
+                        .to_pandas()
+                        .map(reg_dict)
+                        .to_xarray()
+                    )
+                    curC = curC.assign_coords(
+                        roi_id=curC.coords["unit_id"]
+                        .to_pandas()
+                        .map(roi_dict)
+                        .to_xarray()
+                    )
+                    curS = curS.assign_coords(
+                        region=curS.coords["unit_id"]
+                        .to_pandas()
+                        .map(reg_dict)
+                        .to_xarray()
+                    )
+                    curS = curS.assign_coords(
+                        roi_id=curS.coords["unit_id"]
+                        .to_pandas()
+                        .map(roi_dict)
+                        .to_xarray()
+                    )
+            if load_deconv:
+                yield (anm, ss), cur_act, curC, curS, behav_df
+            else:
+                yield (anm, ss), cur_act, behav_df
 
 
 def convert_uid(uid):
