@@ -16,7 +16,7 @@ SS_DICT = {}
 PARAM_NCOMP = 3
 PARAM_NNB = 5
 PARAM_WHITEN = True
-PARAM_TRIM_UNKNOWN = False
+PARAM_TRIM_UNKNOWN = True
 FIG_PATH = "./figs/cell_reduc"
 OUT_PATH = "./intermediate/cell_reduc"
 
