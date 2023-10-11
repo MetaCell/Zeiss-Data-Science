@@ -7,11 +7,12 @@ import pandas as pd
 import plotly.express as px
 import xarray as xr
 from plotly.express.colors import qualitative
+from scipy.ndimage import gaussian_filter1d
 from sklearn.manifold import Isomap
 from sklearn.preprocessing import StandardScaler
 
 from routine.plotting import scatter_3d
-from routine.utilities import classify_behav, load_mat_data
+from routine.utilities import classify_behav, load_mat_data, norm_cells
 
 IN_DPATH = "./data"
 IN_CELLMAP = "./data/CellMaps.xlsx"
@@ -44,6 +45,7 @@ PARAM_SYMMAP = {"novel": "square", "familiar": "x", "self": "circle"}
 PARAM_SZMAP = {"novel": 2.5, "familiar": 1.1, "self": 2}
 PARAM_NCOMP = 3
 PARAM_NNB = 25
+PARAM_SIGMA = 4
 FIG_PATH = "./figs/frame_isomap"
 OUT_PATH = "./intermediate/frame_isomap"
 
@@ -81,10 +83,28 @@ def run_isomap(act, whiten=True):
 # %% isomap analysis
 fig_path = os.path.join(FIG_PATH, "proj")
 os.makedirs(fig_path, exist_ok=True)
-for (anm, ss), act, behav_df in load_mat_data(IN_DPATH):
+for (anm, ss), act, curC, curS, behav_df in load_mat_data(IN_DPATH):
     behav = behav_df.apply(classify_behav, axis="columns")
-    act = act.assign_coords(event=("frame", behav["event"]))
-    act = act.dropna("frame").transpose("frame", "unit_id")
+    act = xr.apply_ufunc(
+        gaussian_filter1d,
+        curS,
+        input_core_dims=[["frame"]],
+        output_core_dims=[["frame"]],
+        vectorize=True,
+        kwargs={"sigma": PARAM_SIGMA},
+    )
+    act = norm_cells(act)
+    act = act.assign_coords(
+        event=(
+            "frame",
+            behav.set_index("frame")["event"].loc[np.array(act.coords["frame"])],
+        )
+    )
+    act = (
+        act.dropna("unit_id", how="all")
+        .dropna("frame", how="all")
+        .transpose("frame", "unit_id")
+    )
     proj_ls = []
     for pts, whit in itt.product(["full", "events"], [True, False]):
         if pts == "events":
