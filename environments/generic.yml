@@ -13,3 +13,4 @@ dependencies:
   - openpyxl
   - pyarrow
   - netcdf4
+  - seaborn

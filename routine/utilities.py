@@ -22,6 +22,7 @@ DAY_DICT = {
 }
 COL_DICT = {"Day4_AccDay4_Test": "Day4"}
 DECONV_PATH = "./intermediate/deconvolution"
+BEHAV_THRES_PATH = "./intermediate/behavs_thres/fm_lab_thres.feat"
 
 PARAM_BEHAV_MAP = {
     "Familiar-BeingAttacked": "attack",
@@ -116,7 +117,20 @@ def classify_behav(row):
     return pd.Series({"frame": fm, "event": evt, "target": tgt, "event_map": evt_mp})
 
 
-def load_mat_data(dpath, load_deconv=True):
+def parse_behav(evt):
+    if pd.isnull(evt):
+        return pd.Series({"event": np.nan, "target": np.nan})
+    evt_mp = PARAM_BEHAV_MAP[evt]
+    if evt.startswith("Novel-"):
+        tgt = "novel"
+    elif evt.startswith("Familiar"):
+        tgt = "familiar"
+    else:
+        tgt = "self"
+    return pd.Series({"event": evt_mp, "target": tgt})
+
+
+def load_mat_data(dpath, load_deconv=True, return_behav="thresholded"):
     try:
         cellmap = pd.read_excel(
             os.path.join(dpath, "CellMaps.xlsx"),
@@ -183,13 +197,23 @@ def load_mat_data(dpath, load_deconv=True):
                 warnings.warn("Cannot load data for {}, {}".format(anm, ss))
                 continue
             behav_df["frame"] = np.arange(len(behav_df))
-            try:
+            if return_behav == "raw":
                 behav_df_raw = pd.DataFrame(
                     raw_behav[RAW_BEHAV_DICT[ss]].T, columns=header
                 )
                 behav_df_raw["frame"] = np.arange(len(behav_df_raw))
-            except:
-                pass
+                behav_rt = behav_df_raw
+            elif return_behav == "thresholded":
+                behav_thres = pd.read_feather(BEHAV_THRES_PATH)
+                behav_rt = behav_thres[
+                    (behav_thres["animal"] == anm) & (behav_thres["session"] == ss)
+                ].copy()
+            elif return_behav == "binary":
+                behav_rt = behav_df
+            else:
+                raise NotImplementedError(
+                    "No Behavior file type: {}".format(return_behav)
+                )
             if load_deconv:
                 try:
                     minian_ds = xr.open_dataset(
@@ -249,9 +273,9 @@ def load_mat_data(dpath, load_deconv=True):
                         .to_xarray()
                     )
             if load_deconv:
-                yield (anm, ss), cur_act, curC, curS, behav_df
+                yield (anm, ss), cur_act, curC, curS, behav_rt
             else:
-                yield (anm, ss), cur_act, behav_df
+                yield (anm, ss), cur_act, behav_rt
 
 
 def convert_uid(uid):

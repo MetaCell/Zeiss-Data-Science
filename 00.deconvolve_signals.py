@@ -44,7 +44,9 @@ def plot_traces(trace_dict, fm_dim="frame", cell_dim="unit_id", gap=0.2, ncell=2
 
 
 # %% load data
-for (anm, ss), act, behav_df in load_mat_data(IN_DPATH, load_deconv=False):
+for (anm, ss), act, behav_df in load_mat_data(
+    IN_DPATH, load_deconv=False, return_behav="raw"
+):
     act = act.dropna("frame").transpose("unit_id", "frame")
     C, S, b, c0, g = update_temporal_block(np.array(act), **PARAM_TEMP)
     C = xr.DataArray(
