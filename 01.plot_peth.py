@@ -52,6 +52,11 @@ def concat_cat(df_ls, cat_cols):
     return pd.concat(df_ls, ignore_index=True)
 
 
+def agg_across(df, cols, val):
+    agg_cols = list(set(df.columns) - set(cols) - set([val]))
+    return df.groupby(agg_cols, observed=True)[val]
+
+
 # %% load and aggregate events
 for (anm, ss), act, curC, curS, behav_df in load_mat_data(
     IN_DPATH, return_behav="thresholded"
@@ -138,3 +143,41 @@ for ss in SS:
         fig = g.fig
         fig.savefig(os.path.join(FIG_PATH, "{}-by_{}.svg".format(ss, by)))
         plt.close(fig)
+
+# %% plot peth for individual cell
+for ss in SS:
+    ss_df = []
+    for anm in ANMS:
+        try:
+            ss_dat = pd.read_feather(
+                os.path.join(OUT_PATH, "{}-{}.feat".format(anm, ss))
+            )
+        except FileNotFoundError:
+            continue
+        ss_dat = (
+            agg_across(ss_dat[ss_dat["region"].notnull()], ["evt_id"], "act")
+            .mean()
+            .reset_index()
+        )
+        ss_dat["unit_id"] = (
+            ss_dat["animal"].astype(str)
+            + "-"
+            + ss_dat["session"].astype(str)
+            + "-"
+            + ss_dat["unit_id"].astype(str)
+        ).astype("category")
+        ss_df.append(ss_dat)
+    ss_df = concat_cat(ss_df, set(PARAM_CAT_COLS) - set(["evt_id"]))
+    for by, by_df in ss_df.groupby("by", observed=True):
+        by_df["evt"] = by_df["evt"].cat.remove_unused_categories()
+        fig = px.line(
+            by_df,
+            x="evt_fm",
+            y="act",
+            line_group="unit_id",
+            color="animal",
+            facet_row="region",
+            facet_col="evt",
+        )
+        os.makedirs(FIG_PATH, exist_ok=True)
+        fig.write_html(os.path.join(FIG_PATH, "{}-by_{}-cells.html".format(ss, by)))
