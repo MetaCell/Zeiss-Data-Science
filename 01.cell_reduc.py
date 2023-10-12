@@ -6,18 +6,22 @@ import pandas as pd
 import plotly.express as px
 import xarray as xr
 from scipy.ndimage import gaussian_filter1d
+from scipy.stats import zscore
 
 from routine.dimension_reduction import reduce_wrap
 from routine.utilities import load_mat_data, parse_behav
 
 IN_DPATH = "./data"
 IN_CELLMAP = "./data/CellMaps.xlsx"
-PARAM_BEHAV_WND = (-20 * 2.5, 20 * 2.5)
+PARAM_WND_BASE = (-20 * 2.5, 0)
+PARAM_WND_ACT = (0, 20 * 3)
 SS_DICT = {}
 PARAM_NCOMP = 3
 PARAM_NNB = 5
 PARAM_WHITEN = False
+PARAM_NORM_BY_CELL = True
 PARAM_SIGMA = 4
+PARAM_AGG_EVT = True
 FIG_PATH = "./figs/cell_reduc"
 OUT_PATH = "./intermediate/cell_reduc"
 
@@ -42,10 +46,14 @@ for (anm, ss), act, curC, curS, behav_df in load_mat_data(
     for evt, evt_df in behav.groupby("evt"):
         evt_arrs = []
         for fm in evt_df["frame"]:
+            base = act.sel(
+                frame=slice(fm + PARAM_WND_BASE[0], fm + PARAM_WND_BASE[1])
+            ).quantile(0.98, "frame")
             a = act.sel(
-                frame=slice(fm + PARAM_BEHAV_WND[0], fm + PARAM_BEHAV_WND[1])
-            ).mean("frame")
-            evt_arrs.append(a)
+                frame=slice(fm + PARAM_WND_ACT[0], fm + PARAM_WND_ACT[1])
+            ).quantile(0.98, "frame")
+            diff = a - base
+            evt_arrs.append(diff)
         evt_arr = xr.concat(evt_arrs, dim="evt").mean("evt").assign_coords(event=evt)
         evt_tuning.append(evt_arr)
     evt_tuning = xr.concat(evt_tuning, "event")
@@ -68,7 +76,25 @@ for trim in [True, False]:
         fig_path = os.path.join(FIG_PATH, algo)
         os.makedirs(fig_path, exist_ok=True)
         for (anm, ss), tdf in tuning_df.groupby(["animal", "session"], observed=True):
+            if PARAM_AGG_EVT:
+                tdf["event"] = tdf["event"].map(lambda e: e.split("-")[0])
+                tdf = (
+                    tdf.groupby(
+                        ["animal", "session", "unit_id", "region", "event"],
+                        observed=True,
+                    )["act"]
+                    .mean()
+                    .reset_index()
+                )
             evt_tuning = tdf.set_index(["unit_id", "event"])["act"].to_xarray()
+            if PARAM_NORM_BY_CELL:
+                evt_tuning = xr.apply_ufunc(
+                    zscore,
+                    evt_tuning,
+                    input_core_dims=[["event"]],
+                    output_core_dims=[["event"]],
+                    vectorize=True,
+                ).dropna("unit_id", how="all")
             proj_df = reduce_wrap(
                 algo,
                 evt_tuning,
@@ -110,7 +136,25 @@ for trim in [True, False]:
         os.makedirs(fig_path, exist_ok=True)
         for ss, tdf in tuning_df.groupby("session"):
             tdf["uid"] = tdf["animal"].astype(str) + "-" + tdf["unit_id"].astype(str)
+            if PARAM_AGG_EVT:
+                tdf["event"] = tdf["event"].map(lambda e: e.split("-")[0])
+                tdf = (
+                    tdf.groupby(
+                        ["animal", "session", "uid", "unit_id", "region", "event"],
+                        observed=True,
+                    )["act"]
+                    .mean()
+                    .reset_index()
+                )
             evt_tuning = tdf.set_index(["uid", "event"])["act"].to_xarray().fillna(0)
+            if PARAM_NORM_BY_CELL:
+                evt_tuning = xr.apply_ufunc(
+                    zscore,
+                    evt_tuning,
+                    input_core_dims=[["event"]],
+                    output_core_dims=[["event"]],
+                    vectorize=True,
+                ).dropna("uid", how="all")
             proj_df = reduce_wrap(
                 algo,
                 evt_tuning,
