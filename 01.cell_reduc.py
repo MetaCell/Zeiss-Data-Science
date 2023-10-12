@@ -8,7 +8,7 @@ import xarray as xr
 from scipy.ndimage import gaussian_filter1d
 
 from routine.dimension_reduction import reduce_wrap
-from routine.utilities import classify_behav, load_mat_data
+from routine.utilities import load_mat_data, parse_behav
 
 IN_DPATH = "./data"
 IN_CELLMAP = "./data/CellMaps.xlsx"
@@ -23,7 +23,9 @@ OUT_PATH = "./intermediate/cell_reduc"
 
 # %% load and aggregate events
 tuning_ls = []
-for (anm, ss), act, curC, curS, behav_df in load_mat_data(IN_DPATH):
+for (anm, ss), act, curC, curS, behav_df in load_mat_data(
+    IN_DPATH, return_behav="thresholded"
+):
     act = xr.apply_ufunc(
         gaussian_filter1d,
         curS,
@@ -32,8 +34,10 @@ for (anm, ss), act, curC, curS, behav_df in load_mat_data(IN_DPATH):
         vectorize=True,
         kwargs={"sigma": PARAM_SIGMA},
     )
-    behav = behav_df.apply(classify_behav, axis="columns")
-    behav["evt"] = behav["event_map"] + "-" + behav["target"]
+    behav_df = behav_df.set_index("frame")
+    behav_parse = behav_df["behavior"].apply(parse_behav)
+    behav = pd.concat([behav_df, behav_parse], axis="columns").reset_index()
+    behav["evt"] = behav["event"] + "-" + behav["target"]
     evt_tuning = []
     for evt, evt_df in behav.groupby("evt"):
         evt_arrs = []
