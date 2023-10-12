@@ -121,13 +121,19 @@ def parse_behav(evt):
     if pd.isnull(evt):
         return pd.Series({"event": np.nan, "target": np.nan})
     evt_mp = PARAM_BEHAV_MAP[evt]
+    if evt.endswith("_20fps"):
+        evt = evt[:-6]
+    elif evt.endswith("_20fpsr"):
+        evt = evt[:-7]
     if evt.startswith("Novel-"):
+        evt = evt.split("-")[1]
         tgt = "novel"
     elif evt.startswith("Familiar"):
+        evt = evt.split("-")[1]
         tgt = "familiar"
     else:
         tgt = "self"
-    return pd.Series({"event": evt_mp, "target": tgt})
+    return pd.Series({"event": evt_mp, "target": tgt, "event_raw": evt})
 
 
 def load_mat_data(dpath, load_deconv=True, return_behav="thresholded"):
