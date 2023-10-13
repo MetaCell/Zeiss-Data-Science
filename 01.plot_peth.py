@@ -9,6 +9,8 @@ import seaborn as sns
 import xarray as xr
 from pandas.api.types import union_categoricals
 from scipy.ndimage import gaussian_filter1d
+from scipy.stats import zscore
+from tqdm.auto import tqdm
 
 from routine.utilities import load_mat_data, parse_behav
 
@@ -111,73 +113,67 @@ for (anm, ss), act, curC, curS, behav_df in load_mat_data(
     os.makedirs(OUT_PATH, exist_ok=True)
     ss_df.to_feather(os.path.join(OUT_PATH, "{}-{}.feat".format(anm, ss)))
 
-# %% plot peth across animals
-for ss in SS:
-    ss_df = []
-    for anm in ANMS:
-        try:
-            ss_dat = pd.read_feather(
-                os.path.join(OUT_PATH, "{}-{}.feat".format(anm, ss))
+# %% plot peth
+for cell_norm in ["raw", "zscore"]:
+    for ss in tqdm(SS):
+        ss_df = []
+        for anm in ANMS:
+            try:
+                ss_dat = pd.read_feather(
+                    os.path.join(OUT_PATH, "{}-{}.feat".format(anm, ss))
+                )
+            except FileNotFoundError:
+                continue
+            ss_dat = ss_dat[ss_dat["region"].notnull()]
+            ss_dat = (
+                agg_across(ss_dat[ss_dat["region"].notnull()], ["evt_id"], "act")
+                .mean()
+                .reset_index()
             )
-        except FileNotFoundError:
-            continue
-        ss_df.append(ss_dat[ss_dat["region"].notnull()])
-    ss_df = concat_cat(ss_df, PARAM_CAT_COLS)
-    for by, by_df in ss_df.groupby("by", observed=True):
-        by_df["evt"] = by_df["evt"].cat.remove_unused_categories()
-        g = sns.relplot(
-            data=by_df,
-            kind="line",
-            x="evt_fm",
-            y="act",
-            hue="animal",
-            row="region",
-            col="evt",
-            facet_kws={"margin_titles": True, "legend_out": True, "sharey": "row"},
-            errorbar="se",
-            err_style="band",
-            height=2.5,
-        )
-        g.map(plt.axvline, x=0, color=".7", dashes=(2, 1), zorder=0)
-        os.makedirs(FIG_PATH, exist_ok=True)
-        fig = g.fig
-        fig.savefig(os.path.join(FIG_PATH, "{}-by_{}.svg".format(ss, by)))
-        plt.close(fig)
-
-# %% plot peth for individual cell
-for ss in SS:
-    ss_df = []
-    for anm in ANMS:
-        try:
-            ss_dat = pd.read_feather(
-                os.path.join(OUT_PATH, "{}-{}.feat".format(anm, ss))
+            ss_dat["unit_id"] = (
+                ss_dat["animal"].astype(str)
+                + "-"
+                + ss_dat["session"].astype(str)
+                + "-"
+                + ss_dat["unit_id"].astype(str)
+            ).astype("category")
+            if cell_norm == "zscore":
+                ss_dat["act"] = agg_across(ss_dat, ["evt_fm"], "act").transform(zscore)
+                ss_dat = ss_dat.dropna(subset="act")
+            ss_df.append(ss_dat)
+        ss_df = concat_cat(ss_df, set(PARAM_CAT_COLS) - set(["evt_id"]))
+        for by, by_df in ss_df.groupby("by", observed=True):
+            by_df["evt"] = by_df["evt"].cat.remove_unused_categories()
+            # summary plot
+            fig_path = os.path.join(FIG_PATH, "summary-{}".format(cell_norm))
+            g = sns.relplot(
+                data=by_df,
+                kind="line",
+                x="evt_fm",
+                y="act",
+                hue="animal",
+                row="region",
+                col="evt",
+                facet_kws={"margin_titles": True, "legend_out": True, "sharey": "row"},
+                errorbar="se",
+                err_style="band",
+                height=2.5,
             )
-        except FileNotFoundError:
-            continue
-        ss_dat = (
-            agg_across(ss_dat[ss_dat["region"].notnull()], ["evt_id"], "act")
-            .mean()
-            .reset_index()
-        )
-        ss_dat["unit_id"] = (
-            ss_dat["animal"].astype(str)
-            + "-"
-            + ss_dat["session"].astype(str)
-            + "-"
-            + ss_dat["unit_id"].astype(str)
-        ).astype("category")
-        ss_df.append(ss_dat)
-    ss_df = concat_cat(ss_df, set(PARAM_CAT_COLS) - set(["evt_id"]))
-    for by, by_df in ss_df.groupby("by", observed=True):
-        by_df["evt"] = by_df["evt"].cat.remove_unused_categories()
-        fig = px.line(
-            by_df,
-            x="evt_fm",
-            y="act",
-            line_group="unit_id",
-            color="animal",
-            facet_row="region",
-            facet_col="evt",
-        )
-        os.makedirs(FIG_PATH, exist_ok=True)
-        fig.write_html(os.path.join(FIG_PATH, "{}-by_{}-cells.html".format(ss, by)))
+            g.map(plt.axvline, x=0, color=".7", dashes=(2, 1), zorder=0)
+            os.makedirs(fig_path, exist_ok=True)
+            fig = g.fig
+            fig.savefig(os.path.join(fig_path, "{}-by_{}.svg".format(ss, by)))
+            plt.close(fig)
+            # line plot
+            fig_path = os.path.join(FIG_PATH, "individual-{}".format(cell_norm))
+            fig = px.line(
+                by_df,
+                x="evt_fm",
+                y="act",
+                line_group="unit_id",
+                color="animal",
+                facet_row="region",
+                facet_col="evt",
+            )
+            os.makedirs(fig_path, exist_ok=True)
+            fig.write_html(os.path.join(fig_path, "{}-by_{}.html".format(ss, by)))
