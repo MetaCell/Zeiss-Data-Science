@@ -113,3 +113,39 @@ behav_lab["behavior"] = behav_lab["behavior"].where(
     (behav_lab["zscore"] > PARAM_ZTHRES) & (behav_lab["sig"] > PARAM_SIGTHRES), np.nan
 )
 behav_lab.to_feather(os.path.join(OUT_PATH, "fm_lab_thres.feat"))
+
+
+# %% plot behavior histogram
+def make_bar(color, **kwargs):
+    ax = sns.barplot(**kwargs)
+    ax.set_yscale("log")
+    return ax
+
+
+behav_lab = pd.read_feather(os.path.join(OUT_PATH, "fm_lab_thres.feat"))
+behav_ct = (
+    behav_lab.groupby(["animal", "session", "behavior"])
+    .count()["frame"]
+    .rename("count")
+    .reset_index()
+)
+behav_ct = behav_ct[behav_ct["behavior"] != None].copy()
+g = sns.FacetGrid(
+    data=behav_ct,
+    row="session",
+    col="animal",
+    hue="behavior",
+    sharex="row",
+    sharey="row",
+    legend_out=True,
+    margin_titles=True,
+    aspect=0.6,
+    height=6,
+)
+g.map_dataframe(make_bar, x="behavior", y="count")
+g.set_xticklabels(rotation=90)
+fig = g.fig
+fig.tight_layout()
+os.makedirs(FIG_PATH, exist_ok=True)
+fig.savefig(os.path.join(FIG_PATH, "counts.svg"), bbox_inches="tight")
+fig.savefig(os.path.join(FIG_PATH, "counts.png"), bbox_inches="tight", dpi=300)
