@@ -7,19 +7,14 @@ import pandas as pd
 import plotly.express as px
 import seaborn as sns
 import xarray as xr
-from pandas.api.types import union_categoricals
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import zscore
 from tqdm.auto import tqdm
 
-from routine.utilities import load_mat_data, parse_behav
+from routine.utilities import agg_across, concat_cat, load_mat_data, parse_behav
 
 IN_DPATH = "./data"
 PARAM_BEHAV_WND = (-20 * 2.5, 20 * 2.5)
-SS_DICT = {}
-PARAM_NCOMP = 3
-PARAM_NNB = 5
-PARAM_WHITEN = False
 PARAM_SIGMA = 4
 FIG_PATH = "./figs/peth"
 OUT_PATH = "./intermediate/peth"
@@ -46,17 +41,6 @@ PARAM_CAT_COLS = [
     "by",
     "region",
 ]
-
-
-def concat_cat(df_ls, cat_cols):
-    dtypes = {c: union_categoricals([d[c] for d in df_ls]).dtype for c in cat_cols}
-    df_ls = [d.astype(dtypes) for d in df_ls]
-    return pd.concat(df_ls, ignore_index=True)
-
-
-def agg_across(df, cols, val):
-    agg_cols = list(set(df.columns) - set(cols) - set([val]))
-    return df.groupby(agg_cols, observed=True)[val]
 
 
 # %% load and aggregate events

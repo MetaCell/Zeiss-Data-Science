@@ -5,6 +5,7 @@ import warnings
 import numpy as np
 import pandas as pd
 import xarray as xr
+from pandas.api.types import union_categoricals
 from scipy.io import loadmat
 from tqdm.auto import tqdm
 
@@ -293,3 +294,17 @@ def convert_uid(uid):
 
 def enumerated_product(*args):
     yield from zip(itt.product(*(range(len(x)) for x in args)), itt.product(*args))
+
+
+def agg_across(df, cols, val, return_val=True):
+    agg_cols = list(set(df.columns) - set(cols) - set([val]))
+    if return_val:
+        return df.groupby(agg_cols, observed=True)[val]
+    else:
+        return df.groupby(agg_cols, observed=True)
+
+
+def concat_cat(df_ls, cat_cols):
+    dtypes = {c: union_categoricals([d[c] for d in df_ls]).dtype for c in cat_cols}
+    df_ls = [d.astype(dtypes) for d in df_ls]
+    return pd.concat(df_ls, ignore_index=True)
