@@ -1,5 +1,6 @@
 # %% imports and definition
 import os
+import warnings
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -41,6 +42,87 @@ PARAM_CAT_COLS = [
     "by",
     "region",
 ]
+SS_TYPE = {
+    "Acc1": "Acc",
+    "Acc2": "Acc",
+    "Acc3": "Acc",
+    "Acc4": "Acc",
+    "Acc5": "Acc",
+    "Train1": "Train",
+    "Train2": "Train",
+    "Train3": "Train",
+    "Train4": "Train",
+    "Test": "Test",
+}
+PARAM_BEHAV_CUR = {
+    "Acc": {
+        "Active": ["dig-self", "walk-self", "wallclimb-self", "groom_front-self"],
+        "NonActive": ["still-self", "sitcorner-self"],
+    },
+    "Train": {
+        "Target of Aggression": ["BeingAttacked-self"],
+        "Aggressor": ["SideAttack-self", "AggressiveChase-self", "nosey1-self"],
+        "Social": [
+            "nose2nose1-self",
+            "nose2rear1-self",
+            "nosey1-self",
+            "follow1-self",
+            "SideAttack-self",
+            "AggressiveChase-self",
+        ],
+        "NonSocial": ["dig-self", "still-self", "sitcorner-self"],
+    },
+    "Test": {
+        "Target of Aggression": ["BeingAttacked-novel", "BeingAttacked-familiar"],
+        "Aggressor": [
+            "SideAttack-familiar",
+            "SideAttack-novel",
+            "AggressiveChase-familiar",
+            "AggressiveChase-novel",
+            "nosey1-familiar",
+            "nosey1-novel",
+        ],
+        "Social: General": [
+            "nose2nose1-familiar",
+            "nose2nose1-novel",
+            "nose2rear1-familiar",
+            "nose2rear1-novel",
+            "nosey1-familiar",
+            "nosey1-novel",
+            "follow1-familiar",
+            "follow1-novel",
+            "SideAttack-familiar",
+            "SideAttack-novel",
+            "AggressiveChase-familiar",
+            "AggressiveChase-novel",
+            "SideSniff1-familiar",
+            "SideSniff1-novel",
+            "Groupsniff-familiar",
+            "Groupsniff-novel",
+        ],
+        "Social: Familiar": [
+            "nose2nose1-familiar",
+            "nose2rear1-familiar",
+            "nosey1-familiar",
+            "follow1-familiar",
+            "SideAttack-familiar",
+            "AggressiveChase-familiar",
+            "SideSniff1-familiar",
+        ],
+        "Social: Novel": [
+            "nose2nose1-novel",
+            "nose2rear1-novel",
+            "nosey1-novel",
+            "follow1-novel",
+            "SideAttack-novel",
+            "AggressiveChase-novel",
+            "SideSniff1-novel",
+        ],
+        "NonSocial": ["dig-self", "still-self", "sitcorner-self", "groom_front-self"],
+        "Active": ["dig-self", "walk-self", "wallclimb-self", "groom_front-self"],
+        "NonActive": ["still-self", "sitcorner-self"],
+    },
+}
 
 
 # %% load and aggregate events
@@ -61,8 +143,26 @@ for (anm, ss), act, curC, curS, behav_df in load_mat_data(
     behav_parse = behav_df["behavior"].apply(parse_behav)
     behav = pd.concat([behav_df, behav_parse], axis="columns").reset_index()
     behav["evt"] = behav["event"] + "-" + behav["target"]
-    for by in ["event", "event_raw"]:
-        for evt, evt_df in behav.groupby(by):
+    # build new curated behavior
+    behav["evt_raw-tgt"] = behav["event_raw"] + "-" + behav["target"]
+    ss_type = SS_TYPE[ss]
+    behav_cur = []
+    for beh_cur, beh_raw in PARAM_BEHAV_CUR[ss_type].items():
+        cur_beh = behav[behav["evt_raw-tgt"].isin(beh_raw)].copy()
+        cur_beh["event_cur"] = beh_cur
+        behav_cur.append(cur_beh)
+    behav_cur = pd.concat(behav_cur, ignore_index=True)
+    beh_covered = set(sum(PARAM_BEHAV_CUR[ss_type].values(), []))
+    beh_miss = set(behav["evt_raw-tgt"].dropna().unique()) - beh_covered
+    if beh_miss:
+        warnings.warn(
+            "Following behavior was not curated in animal {} session {}: {}".format(
+                anm, ss, beh_miss
+            )
+        )
+    behav_dfs = {"event": behav, "event_raw": behav, "event_cur": behav_cur}
+    for by, bdf in behav_dfs.items():
+        for evt, evt_df in bdf.groupby(by):
             evt_arrs = []
             for fm in evt_df["frame"]:
                 fm_dict = {

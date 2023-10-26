@@ -53,10 +53,15 @@ SS = [
 
 
 def response_anova(df, by="evt", y="dff"):
-    by_var = "C({})".format(by)
-    model = ols("{} ~ {}".format(y, by_var), data=df).fit()
-    anova = sm.stats.anova_lm(model, typ=2)
-    return anova.loc[by_var].rename(None)
+    if df[by].nunique() > 1:
+        by_var = "C({})".format(by)
+        model = ols("{} ~ {}".format(y, by_var), data=df).fit()
+        anova = sm.stats.anova_lm(model, typ=2)
+        return anova.loc[by_var].rename(None)
+    else:
+        return pd.Series(
+            {"sum_sq": np.nan, "df": np.nan, "F": np.nan, "PR(>F)": np.nan}
+        )
 
 
 # %% compute dffs
