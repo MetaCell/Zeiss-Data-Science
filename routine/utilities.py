@@ -296,8 +296,12 @@ def enumerated_product(*args):
     yield from zip(itt.product(*(range(len(x)) for x in args)), itt.product(*args))
 
 
-def agg_across(df, cols, val, return_val=True):
-    agg_cols = list(set(df.columns) - set(cols) - set([val]))
+def agg_across(df, cols, val, multiple_val=False, return_val=True):
+    if multiple_val:
+        vals = val
+    else:
+        vals = [val]
+    agg_cols = list(set(df.columns) - set(cols) - set(vals))
     if return_val:
         return df.groupby(agg_cols, observed=True)[val]
     else:

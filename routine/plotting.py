@@ -1,4 +1,5 @@
 import copy
+import itertools as itt
 
 import colorcet as cc
 
@@ -13,6 +14,7 @@ import plotly.express as px
 import xarray as xr
 from matplotlib import cm
 from plotly import graph_objects as go
+from plotly.colors import convert_colors_to_same_type, unlabel_rgb
 from plotly.express.colors import qualitative
 from plotly.subplots import make_subplots
 
@@ -289,3 +291,18 @@ def imshow(
         trace = go.Heatmap(**cur_args)
         fig.add_trace(trace, row=ir + 1, col=ic + 1)
     return fig
+
+
+def map_colors(a, cc=qualitative.D3, return_colors=False):
+    cmap = dict()
+    for x, c in zip(a, itt.cycle(cc)):
+        cmap[x] = convert_colors_to_same_type(c)[0][0]
+    if return_colors:
+        return a.map(cmap)
+    else:
+        return cmap
+
+
+def add_color_opacity(rgb, alpha):
+    r, g, b = unlabel_rgb(rgb)
+    return "rgba({},{},{},{})".format(r, g, b, alpha)
