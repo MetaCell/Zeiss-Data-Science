@@ -128,9 +128,7 @@ for cell_norm in ["raw", "zscore"]:
             ).astype("category")
             ss_dat = ss_dat[ss_dat["unit_id"].isin(sig_cells["unit_id"])]
             if cell_norm == "zscore":
-                ss_dat["act"] = agg_across(
-                    ss_dat, ["unit_id", "evt_fm"], "act"
-                ).transform(zscore)
+                ss_dat["act"] = agg_across(ss_dat, ["evt_fm"], "act").transform(zscore)
                 ss_dat = ss_dat.dropna(subset="act")
             ss_df.append(ss_dat)
         ss_df = concat_cat(ss_df, set(PARAM_CAT_COLS) - set(["evt_id"]))
