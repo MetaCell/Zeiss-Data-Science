@@ -13,8 +13,8 @@ from routine.utilities import load_mat_data
 IN_DPATH = "./data"
 OUT_PATH = "./intermediate/behavs_thres"
 FIG_PATH = "./figs/behav_thres"
-PARAM_ZTHRES = 2
-PARAM_SIGTHRES = 2
+PARAM_ZTHRES = 1
+PARAM_SIGTHRES = 1
 os.makedirs(FIG_PATH, exist_ok=True)
 os.makedirs(OUT_PATH, exist_ok=True)
 
