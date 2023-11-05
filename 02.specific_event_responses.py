@@ -18,7 +18,7 @@ from tqdm.auto import tqdm
 
 from routine.plotting import add_color_opacity, map_colors
 from routine.responsive_cells import compute_dff
-from routine.utilities import agg_across, concat_cat
+from routine.utilities import agg_across, concat_cat, load_mat_data
 
 IN_DPATH = "./data"
 PARAM_BEHAV_WND = (-20 * 2.5, 20 * 2.5)
@@ -111,7 +111,6 @@ resp_tt.to_feather(os.path.join(OUT_PATH, "resp_tt.feat"))
 fig_path = FIG_PATH
 os.makedirs(fig_path, exist_ok=True)
 resp_tt = pd.read_feather(os.path.join(OUT_PATH, "resp_tt.feat"))
-resp_tt = resp_tt[resp_tt["rej_any"]].copy()
 for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
     ss_df["evt-sign"] = (
         ss_df["evt"]
@@ -119,6 +118,7 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
         + np.sign(ss_df["ts"]).map({1: "activated", -1: "suppressed"})
     )
     ss_df["unit_id"] = ss_df["animal"] + "-" + ss_df["unit_id"].astype(str)
+    sig_df = ss_df[ss_df["rej_any"]].copy()
     # build nodes
     node_df = []
     node_df.append(
@@ -161,7 +161,7 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
     link_df.append(anm_lk)
     # reg - event links
     reg_lk = (
-        ss_df[ss_df["rej"]]
+        sig_df[sig_df["rej"]]
         .groupby(["region", "evt"])["unit_id"]
         .nunique()
         .reset_index()
@@ -173,7 +173,7 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
     link_df.append(reg_lk)
     # event - sign links
     evt_lk = (
-        ss_df[ss_df["rej"]]
+        sig_df[sig_df["rej"]]
         .groupby(["region", "evt", "evt-sign"])["unit_id"]
         .nunique()
         .reset_index()
@@ -208,3 +208,5 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
         ]
     )
     fig.write_html(os.path.join(fig_path, "{}-by_{}.html".format(ss, by)))
+    fig.update_layout(autosize=False, height=900, width=1300)
+    fig.write_image(os.path.join(fig_path, "{}-by_{}.svg".format(ss, by)))
