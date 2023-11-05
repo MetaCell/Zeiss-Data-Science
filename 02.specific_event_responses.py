@@ -106,6 +106,7 @@ resp_tt = (
     .reset_index(drop=True)
 )
 resp_tt.to_feather(os.path.join(OUT_PATH, "resp_tt.feat"))
+resp_tt.to_csv(os.path.join(OUT_PATH, "resp_tt.csv"), index=False)
 
 # %% build sankey diagram
 fig_path = FIG_PATH
