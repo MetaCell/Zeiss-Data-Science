@@ -121,93 +121,103 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
     ss_df["unit_id"] = ss_df["animal"] + "-" + ss_df["unit_id"].astype(str)
     sig_df = ss_df[ss_df["rej_any"]].copy()
     # build nodes
-    node_df = []
-    node_df.append(
-        pd.DataFrame(
-            {
-                "label": ss_df["animal"].unique().tolist()
-                + ss_df["evt"].unique().tolist()
-                + ss_df["evt-sign"].dropna().unique().tolist(),
-                "color": "rgb(128,128,128)",
-            }
-        )
+    anm_nd = pd.DataFrame(
+        {"label": ss_df["animal"].unique().tolist(), "color": "rgb(128,128,128)"}
     )
-    node_df.append(
-        pd.DataFrame(
-            {
-                "label": ss_df["region"].unique().tolist(),
-                "color": map_colors(
-                    pd.Series(ss_df["region"].unique()),
-                    cc=qualitative.Plotly,
-                    return_colors=True,
-                ),
-            }
-        )
+    evt_nd = pd.DataFrame(
+        {"label": ss_df["evt"].unique().tolist(), "color": "rgb(128,128,128)"}
     )
-    node_df = pd.concat(node_df, ignore_index=True).reset_index()
-    # node_df["color"] = convert_colors_to_same_type(node_df["color"].tolist())[0]
-    node_ids = node_df.set_index("label")["index"].to_dict()
-    node_cols = node_df.set_index("label")["color"].to_dict()
-    link_df = []
-    # animal - region links
-    anm_lk = (
-        ss_df.groupby(["animal", "region"])["unit_id"]
-        .nunique()
-        .reset_index()
-        .rename(columns={"unit_id": "value"})
+    evt_sign_nd = pd.DataFrame(
+        {
+            "label": ss_df["evt-sign"].dropna().unique().tolist(),
+            "color": "rgb(128,128,128)",
+        }
     )
-    anm_lk["source"] = anm_lk["animal"].map(node_ids)
-    anm_lk["target"] = anm_lk["region"].map(node_ids)
-    anm_lk["color"] = anm_lk["region"].map(node_cols)
-    link_df.append(anm_lk)
-    # reg - event links
-    reg_lk = (
-        sig_df[sig_df["rej"]]
-        .groupby(["region", "evt"])["unit_id"]
-        .nunique()
-        .reset_index()
-        .rename(columns={"unit_id": "value"})
+    reg_nd = pd.DataFrame(
+        {
+            "label": ss_df["region"].unique().tolist(),
+            "color": map_colors(
+                pd.Series(ss_df["region"].unique()),
+                cc=qualitative.Plotly,
+                return_colors=True,
+            ),
+        }
     )
-    reg_lk["source"] = reg_lk["region"].map(node_ids)
-    reg_lk["target"] = reg_lk["evt"].map(node_ids)
-    reg_lk["color"] = reg_lk["region"].map(node_cols)
-    link_df.append(reg_lk)
-    # event - sign links
-    evt_lk = (
-        sig_df[sig_df["rej"]]
-        .groupby(["region", "evt", "evt-sign"])["unit_id"]
-        .nunique()
-        .reset_index()
-        .rename(columns={"unit_id": "value"})
-    )
-    evt_lk["source"] = evt_lk["evt"].map(node_ids)
-    evt_lk["target"] = evt_lk["evt-sign"].map(node_ids)
-    evt_lk["color"] = evt_lk["region"].map(node_cols)
-    link_df.append(evt_lk)
-    # build plot
-    link_df = pd.concat(link_df, ignore_index=True)
-    link_df["color"] = link_df["color"].apply(add_color_opacity, alpha=0.6)
-    fig = go.Figure(
-        data=[
-            go.Sankey(
-                valueformat=":d",
-                valuesuffix=" cells",
-                node={
-                    "pad": 15,
-                    "thickness": 15,
-                    "line": {"color": "black", "width": 0.5},
-                    "label": node_df["label"],
-                    "color": node_df["color"],
-                },
-                link={
-                    "source": link_df["source"],
-                    "target": link_df["target"],
-                    "value": link_df["value"],
-                    "color": link_df["color"],
-                },
+    node_dfs = {
+        "full": pd.concat(
+            [anm_nd, evt_nd, evt_sign_nd, reg_nd], ignore_index=True
+        ).reset_index(),
+        "simple": pd.concat(
+            [anm_nd, evt_nd, evt_sign_nd, reg_nd], ignore_index=True
+        ).reset_index(),
+    }
+    for plt_type, node_df in node_dfs.items():
+        node_ids = node_df.set_index("label")["index"].to_dict()
+        node_cols = node_df.set_index("label")["color"].to_dict()
+        link_df = []
+        # animal - region links
+        if plt_type == "full":
+            anm_lk = (
+                ss_df.groupby(["animal", "region"])["unit_id"]
+                .nunique()
+                .reset_index()
+                .rename(columns={"unit_id": "value"})
             )
-        ]
-    )
-    fig.write_html(os.path.join(fig_path, "{}-by_{}.html".format(ss, by)))
-    fig.update_layout(autosize=False, height=900, width=1300)
-    fig.write_image(os.path.join(fig_path, "{}-by_{}.svg".format(ss, by)))
+            anm_lk["source"] = anm_lk["animal"].map(node_ids)
+            anm_lk["target"] = anm_lk["region"].map(node_ids)
+            anm_lk["color"] = anm_lk["region"].map(node_cols)
+            link_df.append(anm_lk)
+        # reg - event links
+        reg_lk = (
+            sig_df[sig_df["rej"]]
+            .groupby(["region", "evt"])["unit_id"]
+            .nunique()
+            .reset_index()
+            .rename(columns={"unit_id": "value"})
+        )
+        reg_lk["source"] = reg_lk["region"].map(node_ids)
+        reg_lk["target"] = reg_lk["evt"].map(node_ids)
+        reg_lk["color"] = reg_lk["region"].map(node_cols)
+        link_df.append(reg_lk)
+        # event - sign links
+        if plt_type == "full":
+            evt_lk = (
+                sig_df[sig_df["rej"]]
+                .groupby(["region", "evt", "evt-sign"])["unit_id"]
+                .nunique()
+                .reset_index()
+                .rename(columns={"unit_id": "value"})
+            )
+            evt_lk["source"] = evt_lk["evt"].map(node_ids)
+            evt_lk["target"] = evt_lk["evt-sign"].map(node_ids)
+            evt_lk["color"] = evt_lk["region"].map(node_cols)
+            link_df.append(evt_lk)
+        # build plot
+        link_df = pd.concat(link_df, ignore_index=True)
+        link_df["color"] = link_df["color"].apply(add_color_opacity, alpha=0.6)
+        fig = go.Figure(
+            data=[
+                go.Sankey(
+                    valueformat=":d",
+                    valuesuffix=" cells",
+                    node={
+                        "pad": 15,
+                        "thickness": 15,
+                        "line": {"color": "black", "width": 0.5},
+                        "label": node_df["label"],
+                        "color": node_df["color"],
+                    },
+                    link={
+                        "source": link_df["source"],
+                        "target": link_df["target"],
+                        "value": link_df["value"],
+                        "color": link_df["color"],
+                    },
+                )
+            ]
+        )
+        fpath = os.path.join(fig_path, plt_type)
+        os.makedirs(fpath, exist_ok=True)
+        fig.write_html(os.path.join(fpath, "{}-by_{}.html".format(ss, by)))
+        fig.update_layout(autosize=False, height=900, width=1300)
+        fig.write_image(os.path.join(fpath, "{}-by_{}.svg".format(ss, by)))
