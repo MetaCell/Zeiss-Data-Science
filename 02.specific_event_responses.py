@@ -16,7 +16,7 @@ from statsmodels.formula.api import ols
 from statsmodels.stats.multitest import multipletests
 from tqdm.auto import tqdm
 
-from routine.plotting import add_color_opacity, map_colors
+from routine.plotting import add_color_opacity, facet_plotly, map_colors
 from routine.responsive_cells import compute_dff
 from routine.utilities import agg_across, concat_cat, load_mat_data
 
@@ -221,3 +221,89 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
         fig.write_html(os.path.join(fpath, "{}-by_{}.html".format(ss, by)))
         fig.update_layout(autosize=False, height=900, width=1300)
         fig.write_image(os.path.join(fpath, "{}-by_{}.svg".format(ss, by)))
+
+# %% build sunburst chart
+fig_path = os.path.join(FIG_PATH, "count")
+os.makedirs(fig_path, exist_ok=True)
+resp_tt = pd.read_feather(os.path.join(OUT_PATH, "resp_tt.feat"))
+resp_tt["rej"] = resp_tt["rej"].where(resp_tt["rej_any"], False)
+rej_count = (
+    resp_tt.groupby(["animal", "session", "by", "region", "unit_id"], observed=True)[
+        "rej"
+    ]
+    .sum()
+    .rename("rej_count")
+    .reset_index()
+)
+rej_df = (
+    rej_count.groupby(
+        ["animal", "session", "by", "region", "rej_count"], observed=True
+    )["unit_id"]
+    .count()
+    .rename("ncell")
+    .reset_index()
+)
+anm_df = (
+    rej_count.groupby(["session", "by", "region", "rej_count"], observed=True)[
+        "unit_id"
+    ]
+    .count()
+    .rename("ncell")
+    .reset_index()
+)
+anm_df["animal"] = "ALL"
+rej_df = pd.concat([anm_df, rej_df], ignore_index=True).sort_values(
+    ["by", "animal", "session", "region", "rej_count"]
+)
+for by, by_df in rej_df.groupby("by", observed=True):
+    fig, layout = facet_plotly(
+        by_df, facet_row="session", facet_col="animal", specs={"type": "sunburst"}
+    )
+    for (ss, anm), ssdf in by_df.groupby(["session", "animal"]):
+        ly = layout.loc[(ss, anm)]
+        row, col = ly["row"] + 1, ly["col"] + 1
+        lv0 = (
+            ssdf.groupby(["animal", "region"], observed=True)["ncell"]
+            .sum()
+            .reset_index()
+            .rename(columns={"animal": "parent", "region": "label", "ncell": "value"})
+        )
+        lv0["name"] = lv0["label"]
+        lv1 = ssdf[["region", "rej_count", "ncell"]].rename(
+            columns={"region": "parent", "rej_count": "label", "ncell": "value"}
+        )
+        lv1["name"] = lv1["parent"].astype(str) + "-" + lv1["label"].astype(str)
+        plt_df = pd.concat(
+            [
+                lv0,
+                lv1,
+                pd.DataFrame(
+                    [
+                        {
+                            "parent": "",
+                            "label": anm,
+                            "value": ssdf["ncell"].sum(),
+                            "name": anm,
+                        }
+                    ]
+                ),
+            ],
+            ignore_index=True,
+        )
+        fig.add_trace(
+            go.Sunburst(
+                ids=plt_df["name"],
+                labels=plt_df["label"],
+                parents=plt_df["parent"],
+                values=plt_df["value"],
+                branchvalues="total",
+                hovertemplate="%{label}: %{value} cells",
+                name="-".join([anm, ss]),
+            ),
+            row=row,
+            col=col,
+        )
+    fig.update_layout(height=6000)
+    fig.write_html(os.path.join(fig_path, "by_{}.html".format(by)))
+    fig.update_layout(height=6000, width=2000)
+    fig.write_image(os.path.join(fig_path, "by_{}.svg".format(by)))
