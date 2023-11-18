@@ -109,6 +109,49 @@ resp_tt.to_feather(os.path.join(OUT_PATH, "resp_tt.feat"))
 resp_tt.to_csv(os.path.join(OUT_PATH, "resp_tt.csv"), index=False)
 
 # %% build sankey diagram
+ord_dict = {
+    "Active": 0,
+    "Social: General": 1,
+    "Social: Familiar": 2,
+    "Social: Novel": 3,
+    "Aggressor": 4,
+    "Aggressor: Familiar": 5,
+    "Aggressor: Novel": 6,
+    "Target of Aggression": 7,
+    "NonSocial": 8,
+    "NonActive": 9,
+}
+
+
+def arrange_ypos(sizes, pad=2e-2):
+    prop = np.array(sizes / sizes.sum() * (1 - pad * (len(sizes) + 1)))
+    pos = np.zeros_like(prop, dtype=float)
+    pos[0] = pad + prop[0] / 2
+    for i in range(1, len(pos)):
+        pos[i] = pos[i - 1] + prop[i - 1] / 2 + prop[i] / 2 + pad
+    return pos
+
+
+def sort_labs(labs):
+    return labs.map(val_index)
+
+
+def val_index(lab):
+    if lab.endswith("-activated"):
+        add_val = 0
+    elif lab.endswith("-suppressed"):
+        add_val = 1
+    else:
+        add_val = 0
+    try:
+        return (
+            ord_dict[lab.replace("-activated", "").replace("-suppressed", "")] * 100
+            + add_val
+        )
+    except KeyError:
+        return lab
+
+
 fig_path = FIG_PATH
 os.makedirs(fig_path, exist_ok=True)
 resp_tt = pd.read_feather(os.path.join(OUT_PATH, "resp_tt.feat"))
@@ -122,15 +165,24 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
     sig_df = ss_df[ss_df["rej_any"]].copy()
     # build nodes
     anm_nd = pd.DataFrame(
-        {"label": ss_df["animal"].unique().tolist(), "color": "rgb(128,128,128)"}
+        {
+            "label": ss_df["animal"].unique().tolist(),
+            "color": "rgb(128,128,128)",
+            "node_type": "animal",
+        }
     )
     evt_nd = pd.DataFrame(
-        {"label": ss_df["evt"].unique().tolist(), "color": "rgb(128,128,128)"}
+        {
+            "label": ss_df["evt"].unique().tolist(),
+            "color": "rgb(128,128,128)",
+            "node_type": "evt",
+        }
     )
     evt_sign_nd = pd.DataFrame(
         {
             "label": ss_df["evt-sign"].dropna().unique().tolist(),
             "color": "rgb(128,128,128)",
+            "node_type": "evt_sign",
         }
     )
     reg_nd = pd.DataFrame(
@@ -141,15 +193,24 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
                 cc=qualitative.Plotly,
                 return_colors=True,
             ),
+            "node_type": "reg",
         }
     )
     node_dfs = {
-        "full": pd.concat(
-            [anm_nd, evt_nd, evt_sign_nd, reg_nd], ignore_index=True
-        ).reset_index(),
-        "simple": pd.concat(
-            [anm_nd, evt_nd, evt_sign_nd, reg_nd], ignore_index=True
-        ).reset_index(),
+        "full": pd.concat([anm_nd, evt_nd, evt_sign_nd, reg_nd], ignore_index=True)
+        .sort_values(
+            ["node_type", "label"],
+            key=sort_labs,
+        )
+        .reset_index(drop=True)
+        .reset_index(),
+        "simple": pd.concat([evt_nd, reg_nd], ignore_index=True)
+        .sort_values(
+            ["node_type", "label"],
+            key=sort_labs,
+        )
+        .reset_index(drop=True)
+        .reset_index(),
     }
     for plt_type, node_df in node_dfs.items():
         node_ids = node_df.set_index("label")["index"].to_dict()
@@ -195,9 +256,28 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
         # build plot
         link_df = pd.concat(link_df, ignore_index=True)
         link_df["color"] = link_df["color"].apply(add_color_opacity, alpha=0.6)
+        sizes = (
+            pd.concat(
+                [
+                    link_df.groupby("source")["value"].sum(),
+                    link_df.groupby("target")["value"].sum(),
+                ],
+                axis="columns",
+            )
+            .max(axis="columns")
+            .rename("size")
+            .astype(int)
+            .reset_index()
+        )
+        node_df = node_df.merge(sizes, on="index", how="left")
+        node_df["y"] = node_df.groupby("node_type")["size"].transform(arrange_ypos)
+        node_df["x"] = node_df["node_type"].map(
+            {"animal": 1e-6, "reg": 0.33, "evt": 0.66, "evt_sign": 1 - 1e-6}
+        )
         fig = go.Figure(
             data=[
                 go.Sankey(
+                    arrangement="perpendicular",
                     valueformat=":d",
                     valuesuffix=" cells",
                     node={
@@ -206,6 +286,8 @@ for (ss, by), ss_df in resp_tt.groupby(["session", "by"], observed=True):
                         "line": {"color": "black", "width": 0.5},
                         "label": node_df["label"],
                         "color": node_df["color"],
+                        "x": node_df["x"],
+                        "y": node_df["y"],
                     },
                     link={
                         "source": link_df["source"],
