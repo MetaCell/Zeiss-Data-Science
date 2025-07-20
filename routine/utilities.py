@@ -7,6 +7,7 @@ import pandas as pd
 import xarray as xr
 from pandas.api.types import union_categoricals
 from scipy.io import loadmat
+from tifffile import imread
 from tqdm.auto import tqdm
 
 DAY_DICT = {
@@ -137,45 +138,39 @@ def parse_behav(evt):
     return pd.Series({"event": evt_mp, "target": tgt, "event_raw": evt})
 
 
-def load_mat_data(dpath, load_deconv=True, return_behav="thresholded"):
+def load_mat_data(
+    dpath, load_deconv=True, load_act=False, load_roi=False, return_behav="thresholded"
+):
     try:
         cellmap = pd.read_excel(
-            os.path.join(dpath, "CellMaps.xlsx"),
-            sheet_name=None,
-            converters={"Region": lambda r: r.strip("'")},
+            os.path.join(dpath, "CellMaps.xlsx"), sheet_name=None, header=None
         )
-        cellmap = {k[3:]: v for k, v in cellmap.items()}
+        crossmap = pd.read_feather(os.path.join(dpath, "mapping.feat"))
+        cellmap_df = []
+        for anm, cmap in cellmap.items():
+            cmap.columns = pd.MultiIndex.from_tuples(
+                [("meta", "master_id"), ("class", "fluorophore"), ("class", "region")]
+            )
+            cmap[("meta", "animal")] = anm
+            cellmap_df.append(cmap)
+        cellmap = pd.concat(cellmap_df)
+        cellmap = crossmap.merge(
+            cellmap, on=[("meta", "animal"), ("meta", "master_id")], how="left"
+        )
     except FileNotFoundError:
         cellmap = None
-    matfiles = list(filter(lambda f: f.endswith(".mat"), os.listdir(dpath)))
-    anms = set([fn.split("_")[0] for fn in matfiles])
+    anms = [d for d in os.listdir(dpath) if os.path.isdir(os.path.join(dpath,d))]
     for anm in tqdm(anms, desc="animal"):
-        act = loadmat(
-            os.path.join(dpath, "{}_NeuralActivity.mat".format(anm)),
-            simplify_cells=True,
-        )
-        behav = loadmat(
-            os.path.join(dpath, "{}_Behavior.mat".format(anm)), simplify_cells=True
-        )
-        raw_behav = loadmat(
-            os.path.join(dpath, "{}_Raw.mat".format(anm)), simplify_cells=True
-        )
-        act_dict = dict()
-        for ss, a in act.items():
-            if ss.startswith("_"):
-                continue
-            act_dict[ss] = xr.DataArray(
-                a,
-                dims=["unit_id", "frame"],
-                coords={
-                    "unit_id": np.arange(a.shape[0]),
-                    "frame": np.arange(a.shape[1]),
-                    "animal": anm,
-                    "session": ss,
-                },
-                name="act",
-            )
-        for ss, cur_act in tqdm(act_dict.items(), desc="session", leave=False):
+        anm_path = os.path.join(dpath, anm)
+        tif_file = [f for f in os.listdir(anm_path) if f.endswith(".tiff")]
+        beh_file = [f for f in os.listdir(anm_path) if f.endswith("_Behavior.mat")]
+        raw_file = [f for f in os.listdir(anm_path) if f.endswith("_Raw.mat")]
+        assert len(beh_file) == 1, "{} beh file found in {}".format(len(beh_file), anm_path)
+        assert len(raw_file) == 1, "{} raw file found in {}".format(len(raw_file), anm_path)
+        behav = loadmat(os.path.join(dpath, anm, beh_file[0]), simplify_cells=True)
+        raw_behav = loadmat(os.path.join(dpath, anm, raw_file[0]), simplify_cells=True)
+        for tf in tqdm(tif_file, desc="session", leave=False):
+            ss = os.path.splitext(tf)[0].split("-")[1]
             if ss.startswith("Acc"):
                 ss_type = "Acc"
             elif ss.startswith("Train"):
@@ -221,6 +216,16 @@ def load_mat_data(dpath, load_deconv=True, return_behav="thresholded"):
                 raise NotImplementedError(
                     "No Behavior file type: {}".format(return_behav)
                 )
+            if load_act:
+                cur_act = load_tiff(os.path.join(anm_path, tf))
+            else:
+                cur_act = None
+            if load_roi:
+                cur_roi = xr.open_dataset(
+                    os.path.join(anm_path, "{}.nc".format(os.path.splitext(tf)[0]))
+                ).rename({"roi_id": "unit_id"})
+            else:
+                cur_roi = None
             if load_deconv:
                 try:
                     minian_ds = xr.open_dataset(
@@ -229,31 +234,34 @@ def load_mat_data(dpath, load_deconv=True, return_behav="thresholded"):
                 except FileNotFoundError:
                     continue
                 curC, curS = minian_ds["C"], minian_ds["S"]
+            else:
+                curC, curS = None, None
             if cellmap is not None:
                 day = DAY_DICT[ss]
                 cmap = (
-                    cellmap[anm]
-                    .rename(columns=COL_DICT)[
-                        ["ROI Number", "Fluorophore", "Region", day]
+                    cellmap.loc[
+                        cellmap["meta", "animal"] == anm,
+                        [("session", day), ("meta", "master_id"), ("class", "region")],
                     ]
-                    .copy()
+                    .droplevel(0, axis="columns")
+                    .rename(columns={day: "unit_id", "master_id": "roi_id"})
                 )
-                cmap[day] = cmap[day].map(convert_uid)
-                cmap = cmap.dropna().set_index(day)
-                reg_dict = cmap["Region"].to_dict()
-                roi_dict = cmap["ROI Number"].to_dict()
-                cur_act = cur_act.assign_coords(
-                    region=cur_act.coords["unit_id"]
-                    .to_pandas()
-                    .map(reg_dict)
-                    .to_xarray()
-                )
-                cur_act = cur_act.assign_coords(
-                    roi_id=cur_act.coords["unit_id"]
-                    .to_pandas()
-                    .map(roi_dict)
-                    .to_xarray()
-                )
+                cmap = cmap.dropna().set_index("unit_id")
+                reg_dict = cmap["region"].to_dict()
+                roi_dict = cmap["roi_id"].to_dict()
+                if load_roi:
+                    cur_roi = cur_roi.assign_coords(
+                        region=cur_roi.coords["unit_id"]
+                        .to_pandas()
+                        .map(reg_dict)
+                        .to_xarray()
+                    )
+                    cur_roi = cur_roi.assign_coords(
+                        roi_id=cur_roi.coords["unit_id"]
+                        .to_pandas()
+                        .map(roi_dict)
+                        .to_xarray()
+                    )
                 if load_deconv:
                     curC = curC.assign_coords(
                         region=curC.coords["unit_id"]
@@ -279,10 +287,7 @@ def load_mat_data(dpath, load_deconv=True, return_behav="thresholded"):
                         .map(roi_dict)
                         .to_xarray()
                     )
-            if load_deconv:
-                yield (anm, ss), cur_act, curC, curS, behav_rt
-            else:
-                yield (anm, ss), cur_act, behav_rt
+            yield (anm, ss), cur_act, curC, curS, cur_roi, behav_rt
 
 
 def convert_uid(uid):
@@ -312,3 +317,16 @@ def concat_cat(df_ls, cat_cols):
     dtypes = {c: union_categoricals([d[c] for d in df_ls]).dtype for c in cat_cols}
     df_ls = [d.astype(dtypes) for d in df_ls]
     return pd.concat(df_ls, ignore_index=True)
+
+
+def load_tiff(fpath):
+    img = imread(fpath)
+    return xr.DataArray(
+        img,
+        dims=["frame", "height", "width"],
+        coords={
+            "frame": np.arange(img.shape[0]),
+            "height": np.arange(img.shape[1]),
+            "width": np.arange(img.shape[2]),
+        },
+    )

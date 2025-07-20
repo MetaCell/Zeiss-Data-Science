@@ -10,7 +10,7 @@ from minian.cnmf import update_temporal_block
 
 from routine.utilities import load_mat_data, norm_cells
 
-IN_DPATH = "./data"
+IN_DPATH = "./data/20250711/"
 OUT_PATH = "./intermediate/deconvolution"
 FIG_PATH = "./figs/deconvolution"
 PARAM_TEMP = {
@@ -31,7 +31,7 @@ def plot_traces(trace_dict, fm_dim="frame", cell_dim="unit_id", gap=0.2, ncell=2
     ncell = min(ncell, len(uids))
     cells = np.random.choice(uids, ncell, replace=False)
     dfs = []
-    for tr_name, a in trace_dict.items():
+    for tr_name, a in trace_dict.items(): 
         a = a.sel({cell_dim: cells}).transpose(cell_dim, fm_dim)
         a_norm = norm_cells(a, fm_dim)
         a_norm = a_norm + (np.arange(ncell) * (1 + gap)).reshape((-1, 1))
@@ -43,10 +43,12 @@ def plot_traces(trace_dict, fm_dim="frame", cell_dim="unit_id", gap=0.2, ncell=2
     return px.line(dfs, x=fm_dim, y="act", color="signal", line_group="sig_id")
 
 
-# %% load data
-for (anm, ss), act, behav_df in load_mat_data(
-    IN_DPATH, load_deconv=False, return_behav="raw"
+# %% load data and deconvolve
+for (anm, ss), mov,_, _, roi_ds, behav_df in load_mat_data(
+    IN_DPATH, load_deconv=False, load_roi=True, load_act=True, return_behav="raw"
 ):
+    roi = roi_ds['rois_raw'].dropna('height', how='all').dropna('width', how='all')
+    act = roi.dot(mov)
     act = act.dropna("frame").transpose("unit_id", "frame")
     C, S, b, c0, g = update_temporal_block(np.array(act), **PARAM_TEMP)
     C = xr.DataArray(
@@ -67,5 +69,5 @@ for (anm, ss), act, behav_df in load_mat_data(
     )
     fig = plot_traces({"raw": act, "calcium": C, "deconv": S})
     fig.write_html(os.path.join(FIG_PATH, "{}-{}.html".format(anm, ss)))
-    ds = xr.merge([C.rename("C"), S.rename("S")])
+    ds = xr.merge([act.rename('act'), C.rename("C"), S.rename("S")])
     ds.to_netcdf(os.path.join(OUT_PATH, "{}-{}.nc".format(anm, ss)))

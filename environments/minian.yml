@@ -3,4 +3,6 @@ channels:
 dependencies:
   - minian
   - openpyxl
+  - tifffile
   - plotly
+  - pyarrow
