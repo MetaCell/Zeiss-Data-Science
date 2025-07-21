@@ -10,7 +10,7 @@ from scipy.stats import zscore
 
 from routine.utilities import load_mat_data
 
-IN_DPATH = "./data"
+IN_DPATH = "./data/20250711"
 OUT_PATH = "./intermediate/behavs_thres"
 FIG_PATH = "./figs/behav_thres"
 PARAM_ZTHRES = 1
@@ -46,7 +46,7 @@ def get_max_behav(fm_df, behav_col="behavior", metric="zscore"):
 
 # %% load and aggregate events
 behavs = []
-for (anm, ss), act, curC, curS, behav_df in load_mat_data(IN_DPATH, return_behav="raw"):
+for (anm, ss), act, curC, curS, cur_roi, behav_df in load_mat_data(IN_DPATH, return_behav="raw"):
     behs = list(set(behav_df.columns) - set(["frame"]))
     for b in behs:
         bdf = behav_df[b].rename("raw").to_frame()

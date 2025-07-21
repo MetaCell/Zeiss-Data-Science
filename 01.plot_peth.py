@@ -14,12 +14,12 @@ from tqdm.auto import tqdm
 
 from routine.utilities import agg_across, concat_cat, load_mat_data, parse_behav
 
-IN_DPATH = "./data"
+IN_DPATH = "./data/20250711"
 PARAM_BEHAV_WND = (-20 * 2.5, 20 * 2.5)
 PARAM_SIGMA = 4
 FIG_PATH = "./figs/peth"
 OUT_PATH = "./intermediate/peth"
-ANMS = ["21271R", "21272R", "21965RL", "22384", "22670"]
+ANMS = ["YAS21271R", "YAS21272R", "YAS21965RL", "YAS22384", "YAS22670"]
 SS = [
     "Acc1",
     "Acc2",
@@ -117,7 +117,7 @@ PARAM_BEHAV_CUR = {
 
 
 # %% load and aggregate events
-for (anm, ss), act, curC, curS, behav_df in load_mat_data(
+for (anm, ss), act, curC, curS, cur_roi, behav_df in load_mat_data(
     IN_DPATH, return_behav="thresholded"
 ):
     ss_df = []
@@ -129,6 +129,7 @@ for (anm, ss), act, curC, curS, behav_df in load_mat_data(
         vectorize=True,
         kwargs={"sigma": PARAM_SIGMA},
     )
+    print(act.max())
     reg_dict = act.coords["region"].to_series().to_dict()
     behav_df = behav_df.set_index("frame")
     behav_parse = behav_df["behavior"].apply(parse_behav)

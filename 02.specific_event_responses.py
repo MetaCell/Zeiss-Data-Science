@@ -41,7 +41,7 @@ PARAM_CAT_COLS = [
     "by",
     "region",
 ]
-ANMS = ["21271R", "21272R", "21965RL", "22384", "22670"]
+ANMS = ["YAS21271R", "YAS21272R", "YAS21965RL", "YAS22384", "YAS22670"]
 SS = [
     "Acc1",
     "Acc2",
