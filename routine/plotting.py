@@ -3,7 +3,10 @@ import itertools as itt
 
 import colorcet as cc
 
-# import cv2
+try:
+    import cv2
+except ImportError:
+    pass
 import holoviews as hv
 import matplotlib.pyplot as plt
 import numpy as np
@@ -306,3 +309,27 @@ def map_colors(a, cc=qualitative.D3, return_colors=False):
 def add_color_opacity(rgb, alpha):
     r, g, b = unlabel_rgb(rgb)
     return "rgba({},{},{},{})".format(r, g, b, alpha)
+
+
+def plotA_contour(A: xr.DataArray, im: xr.DataArray, cmap=None, im_opts=None):
+    im = hv.Image(im, ["width", "height"])
+    if im_opts is not None:
+        im = im.opts(**im_opts)
+    im = im * hv.Path([])
+    for uid in A.coords["unit"].values:
+        curA = (np.array(A.sel(unit=uid)) > 0).astype(np.uint8)
+        try:
+            cnt = cv2.findContours(curA, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)[0][
+                0
+            ].squeeze()
+        except IndexError:
+            continue
+        if cnt.ndim > 1:
+            cnt_scale = np.zeros_like(cnt)
+            cnt_scale[:, 0] = A.coords["width"][cnt[:, 0]]
+            cnt_scale[:, 1] = A.coords["height"][cnt[:, 1]]
+            pth = hv.Path(cnt_scale.squeeze())
+            if cmap is not None:
+                pth = pth.opts(color=cmap[uid])
+            im = im * pth
+    return im

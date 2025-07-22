@@ -159,14 +159,18 @@ def load_mat_data(
         )
     except FileNotFoundError:
         cellmap = None
-    anms = [d for d in os.listdir(dpath) if os.path.isdir(os.path.join(dpath,d))]
+    anms = [d for d in os.listdir(dpath) if os.path.isdir(os.path.join(dpath, d))]
     for anm in tqdm(anms, desc="animal"):
         anm_path = os.path.join(dpath, anm)
         tif_file = [f for f in os.listdir(anm_path) if f.endswith(".tiff")]
         beh_file = [f for f in os.listdir(anm_path) if f.endswith("_Behavior.mat")]
         raw_file = [f for f in os.listdir(anm_path) if f.endswith("_Raw.mat")]
-        assert len(beh_file) == 1, "{} beh file found in {}".format(len(beh_file), anm_path)
-        assert len(raw_file) == 1, "{} raw file found in {}".format(len(raw_file), anm_path)
+        assert len(beh_file) == 1, "{} beh file found in {}".format(
+            len(beh_file), anm_path
+        )
+        assert len(raw_file) == 1, "{} raw file found in {}".format(
+            len(raw_file), anm_path
+        )
         behav = loadmat(os.path.join(dpath, anm, beh_file[0]), simplify_cells=True)
         raw_behav = loadmat(os.path.join(dpath, anm, raw_file[0]), simplify_cells=True)
         for tf in tqdm(tif_file, desc="session", leave=False):

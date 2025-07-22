@@ -16,3 +16,4 @@ dependencies:
   - seaborn
   - python-kaleido
   - tifffile
+  - opencv
